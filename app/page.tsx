@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface StockData {
   symbol: string
@@ -42,7 +42,18 @@ export default function Home() {
     <main className="min-h-screen bg-zinc-950 text-white">
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <span className="text-emerald-400 text-2xl font-bold tracking-tight">Firs<span className="text-white">Trade</span></span>
-        <span className="text-zinc-500 text-sm">Paper Trading Simulator</span>
+        <button
+        onClick={() => {
+          const p = localStorage.getItem('firstrade_portfolio')
+          if (p && JSON.parse(p).transactions?.length > 0) {
+            window.location.href = '/portfolio'
+          } else {
+            window.location.href = '/onboarding'
+          }
+        }}
+        className="bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold px-4 py-2 rounded-xl text-sm transition">
+        My Portfolio
+      </button>
       </header>
       <section className="max-w-2xl mx-auto px-6 pt-24 pb-12 text-center">
         <h1 className="text-5xl font-bold mb-4 leading-tight">Your first trade,<br /><span className="text-emerald-400">without the risk.</span></h1>
