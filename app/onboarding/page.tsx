@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -33,6 +33,12 @@ export default function Onboarding() {
   const [showCustom, setShowCustom] = useState(false)
   const [loading, setLoading] = useState(false)
   const [balance, setBalance] = useState(10000)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) router.push('/auth')
+    })
+  }, [router])
 
   const next = (to: Screen) => setScreen(to)
 
