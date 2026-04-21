@@ -1,109 +1,116 @@
-// ─── lib/storage.ts ───────────────────────────────────────────────────────────
-// This file is the ONLY place that reads/writes data.
-// Right now it uses localStorage (browser storage).
-// Later, swap these functions for Supabase calls — nothing else needs to change.
+// lib/storage.ts
+// Data layer — all reads/writes go through here.
+// Now connected to Supabase instead of localStorage.
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { supabase } from './supabase'
 
-export interface User {
+export interface Portfolio {
   id: string
-  createdAt: string
+  userId: string
+  balance: number
+  invested: number
+  transactions: Transaction[]
 }
 
 export interface Transaction {
   id: string
-  asset: string      // "Apple"
-  ticker: string     // "AAPL"
-  emoji: string      // "🍎"
-  amount: number     // dollars invested
+  asset: string
+  ticker: string
+  emoji: string
+  amount: number
   timestamp: string
 }
 
-export interface Portfolio {
-  userId: string
-  balance: number        // remaining cash
-  invested: number       // total dollars invested
-  transactions: Transaction[]
-}
-
-// ─── Keys ────────────────────────────────────────────────────────────────────
-const KEYS = {
-  user: 'firstrade_user',
-  portfolio: 'firstrade_portfolio',
-}
-
-// ─── User ────────────────────────────────────────────────────────────────────
-
-// Create an anonymous user (no email/password yet)
-export function createUser(): User {
-  const user: User = {
-    id: `user_${Date.now()}`,
-    createdAt: new Date().toISOString(),
-  }
-  localStorage.setItem(KEYS.user, JSON.stringify(user))
-  return user
-}
-
-// Get existing user or null
-export function getUser(): User | null {
-  const data = localStorage.getItem(KEYS.user)
-  return data ? JSON.parse(data) : null
-}
-
-// ─── Portfolio ───────────────────────────────────────────────────────────────
-
 const STARTING_BALANCE = 10000
 
-// Create a fresh portfolio for a new user
-export function createPortfolio(userId: string): Portfolio {
-  const portfolio: Portfolio = {
-    userId,
-    balance: STARTING_BALANCE,
-    invested: 0,
+// Create a fresh portfolio for a new user in Supabase
+export async function createPortfolio(userId: string): Promise<Portfolio> {
+  const { data, error } = await supabase
+    .from('portfolios')
+    .insert({ user_id: userId, balance: STARTING_BALANCE, invested: 0 })
+    .select()
+    .single()
+
+  if (error) throw error
+  return {
+    id: data.id,
+    userId: data.user_id,
+    balance: data.balance,
+    invested: data.invested,
     transactions: [],
   }
-  localStorage.setItem(KEYS.portfolio, JSON.stringify(portfolio))
-  return portfolio
 }
 
-// Get existing portfolio or null
-export function getPortfolio(): Portfolio | null {
-  const data = localStorage.getItem(KEYS.portfolio)
-  return data ? JSON.parse(data) : null
+// Get portfolio + transactions for current user
+export async function getPortfolio(): Promise<Portfolio | null> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const { data: portfolio } = await supabase
+    .from('portfolios')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!portfolio) return null
+
+  const { data: transactions } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+
+  return {
+    id: portfolio.id,
+    userId: portfolio.user_id,
+    balance: portfolio.balance,
+    invested: portfolio.invested,
+    transactions: (transactions || []).map(tx => ({
+      id: tx.id,
+      asset: tx.asset,
+      ticker: tx.ticker,
+      emoji: tx.emoji,
+      amount: tx.amount,
+      timestamp: tx.created_at,
+    })),
+  }
 }
 
-// Save a transaction and update balance
-export function saveTransaction(
+// Save a transaction and update portfolio balance
+export async function saveTransaction(
   asset: string,
   ticker: string,
   emoji: string,
   amount: number
-): Portfolio {
-  const portfolio = getPortfolio()
-  if (!portfolio) throw new Error('No portfolio found')
+): Promise<Portfolio> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not logged in')
 
-  const transaction: Transaction = {
-    id: `tx_${Date.now()}`,
+  // 1. Insert transaction
+  await supabase.from('transactions').insert({
+    user_id: user.id,
     asset,
     ticker,
     emoji,
     amount,
-    timestamp: new Date().toISOString(),
-  }
+  })
 
-  const updated: Portfolio = {
-    ...portfolio,
-    balance: portfolio.balance - amount,
-    invested: portfolio.invested + amount,
-    transactions: [...portfolio.transactions, transaction],
-  }
+  // 2. Update portfolio balance
+  const { data: portfolio } = await supabase
+    .from('portfolios')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
 
-  localStorage.setItem(KEYS.portfolio, JSON.stringify(updated))
-  return updated
-}
+  await supabase
+    .from('portfolios')
+    .update({
+      balance: portfolio.balance - amount,
+      invested: portfolio.invested + amount,
+    })
+    .eq('user_id', user.id)
 
-// Clear everything (useful for testing / logout later)
-export function clearStorage(): void {
-  localStorage.removeItem(KEYS.user)
-  localStorage.removeItem(KEYS.portfolio)
+  // 3. Return updated portfolio
+  const updated = await getPortfolio()
+  return updated!
 }
