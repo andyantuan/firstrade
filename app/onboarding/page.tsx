@@ -35,8 +35,11 @@ export default function Onboarding() {
   const [balance, setBalance] = useState(10000)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) router.push('/auth')
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { router.push('/auth'); return }
+      // Load real balance from Supabase
+      const { data: p } = await supabase.from('portfolios').select('balance').eq('user_id', user.id).single()
+      if (p) setBalance(p.balance)
     })
   }, [router])
 

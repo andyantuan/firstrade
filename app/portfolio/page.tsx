@@ -85,7 +85,7 @@ export default function PortfolioPage() {
         {/* Total value */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-4 text-center">
           <div className="text-zinc-400 text-sm mb-1">Total portfolio value</div>
-          <div className="text-4xl font-bold text-white">${totalValue.toLocaleString()}</div>
+          <div className="text-4xl font-bold text-white">${totalValue.toLocaleString("en-US")}</div>
           <div className="text-zinc-500 text-xs mt-1">Started with $10,000</div>
         </div>
 
@@ -94,13 +94,13 @@ export default function PortfolioPage() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
             <div className="text-zinc-400 text-xs mb-1">Cash available</div>
             <div className="text-xl font-bold text-emerald-400">
-              ${portfolio.balance.toLocaleString()}
+              ${portfolio.balance.toLocaleString("en-US")}
             </div>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
             <div className="text-zinc-400 text-xs mb-1">Invested</div>
             <div className="text-xl font-bold text-white">
-              ${portfolio.invested.toLocaleString()}
+              ${portfolio.invested.toLocaleString("en-US")}
             </div>
           </div>
         </div>
