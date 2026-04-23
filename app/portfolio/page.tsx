@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import StockChartModal from '@/components/StockChartModal'
 
 interface Transaction {
   id: string
@@ -82,6 +83,7 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true)
   const [selling, setSelling] = useState<string | null>(null)
   const [sellAmount, setSellAmount] = useState<Record<string, number>>({})
+  const [selectedAsset, setSelectedAsset] = useState<GroupedAsset | null>(null)
 
   const load = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -93,7 +95,6 @@ export default function PortfolioPage() {
     const allTxs = txs || []
     setTransactions(allTxs)
 
-    // Fetch live prices for all unique tickers
     const tickers = [...new Set(allTxs.filter(t => t.amount > 0).map(t => t.ticker))]
     const priceMap: LivePrices = {}
     await Promise.all(tickers.map(async ticker => {
@@ -114,7 +115,6 @@ export default function PortfolioPage() {
       if (!user) return
       const { data: p } = await supabase.from('portfolios').select('*').eq('user_id', user.id).single()
 
-      // Use current market value for sell (not cost basis)
       const sharesToSell = asset.totalShares * (amount / asset.totalInvested)
       const saleValue = sellAll ? asset.currentValue : sharesToSell * asset.currentPrice
 
@@ -165,11 +165,11 @@ export default function PortfolioPage() {
         {/* Total portfolio value */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-4 text-center">
           <div className="text-zinc-400 text-sm mb-1">Total portfolio value</div>
-          <div className="text-4xl font-bold text-white">\${totalPortfolioValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
-          <div className="text-zinc-500 text-xs mt-1">Started with \$10,000</div>
+          <div className="text-4xl font-bold text-white">${totalPortfolioValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+          <div className="text-zinc-500 text-xs mt-1">Started with $10,000</div>
           {totalInvested > 0 && (
             <div className={`text-sm font-semibold mt-2 ${totalPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {totalPnL >= 0 ? '▲' : '▼'} \${Math.abs(totalPnL).toLocaleString('en-US', { maximumFractionDigits: 2 })} ({Math.abs(totalPnLPercent).toFixed(2)}%) total return
+              {totalPnL >= 0 ? '▲' : '▼'} ${Math.abs(totalPnL).toLocaleString('en-US', { maximumFractionDigits: 2 })} ({Math.abs(totalPnLPercent).toFixed(2)}%) total return
             </div>
           )}
         </div>
@@ -178,11 +178,11 @@ export default function PortfolioPage() {
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
             <div className="text-zinc-400 text-xs mb-1">Cash available</div>
-            <div className="text-xl font-bold text-emerald-400">\${portfolio.balance.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+            <div className="text-xl font-bold text-emerald-400">${portfolio.balance.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
             <div className="text-zinc-400 text-xs mb-1">Market value</div>
-            <div className="text-xl font-bold text-white">\${totalCurrentValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+            <div className="text-xl font-bold text-white">${totalCurrentValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
           </div>
         </div>
 
@@ -194,7 +194,11 @@ export default function PortfolioPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {grouped.map(asset => (
-                <div key={asset.ticker} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+                <div
+                  key={asset.ticker}
+                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-transform"
+                  onClick={() => setSelectedAsset(asset)}
+                >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
@@ -205,9 +209,9 @@ export default function PortfolioPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-white">\${asset.currentValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+                      <div className="font-bold text-white">${asset.currentValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
                       <div className={`text-xs font-medium ${asset.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {asset.pnl >= 0 ? '▲' : '▼'} \${Math.abs(asset.pnl).toFixed(2)} ({Math.abs(asset.pnlPercent).toFixed(2)}%)
+                        {asset.pnl >= 0 ? '▲' : '▼'} ${Math.abs(asset.pnl).toFixed(2)} ({Math.abs(asset.pnlPercent).toFixed(2)}%)
                       </div>
                     </div>
                   </div>
@@ -216,21 +220,21 @@ export default function PortfolioPage() {
                   <div className="grid grid-cols-3 gap-2 border-t border-zinc-800 pt-3 mb-3 text-xs">
                     <div>
                       <div className="text-zinc-500 mb-1">Invested</div>
-                      <div className="text-zinc-300">\${asset.totalInvested.toLocaleString('en-US')}</div>
+                      <div className="text-zinc-300">${asset.totalInvested.toLocaleString('en-US')}</div>
                     </div>
                     <div>
                       <div className="text-zinc-500 mb-1">Avg entry</div>
-                      <div className="text-zinc-300">\${asset.avgEntryPrice.toFixed(2)}</div>
+                      <div className="text-zinc-300">${asset.avgEntryPrice.toFixed(2)}</div>
                     </div>
                     <div>
                       <div className="text-zinc-500 mb-1">Current</div>
-                      <div className="text-zinc-300">\${asset.currentPrice.toFixed(2)}</div>
+                      <div className="text-zinc-300">${asset.currentPrice.toFixed(2)}</div>
                     </div>
                   </div>
 
-                  {/* Sell */}
-                  <div className="flex gap-2 items-center">
-                    <input type="number" placeholder="Amount \$"
+                  {/* Sell — stop click from opening chart */}
+                  <div className="flex gap-2 items-center" onClick={e => e.stopPropagation()}>
+                    <input type="number" placeholder="Amount $"
                       value={sellAmount[asset.ticker] || ''}
                       onChange={e => setSellAmount(prev => ({ ...prev, [asset.ticker]: Number(e.target.value) }))}
                       max={asset.totalInvested}
@@ -247,7 +251,7 @@ export default function PortfolioPage() {
                     </button>
                   </div>
                   {sellAmount[asset.ticker] > asset.totalInvested && (
-                    <p className="text-red-400 text-xs mt-1">Max: \${asset.totalInvested}</p>
+                    <p className="text-red-400 text-xs mt-1">Max: ${asset.totalInvested}</p>
                   )}
                 </div>
               ))}
@@ -259,6 +263,11 @@ export default function PortfolioPage() {
           Buy more assets
         </button>
       </div>
+
+      {/* Chart modal */}
+      {selectedAsset && (
+        <StockChartModal asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
+      )}
     </main>
   )
 }
