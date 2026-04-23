@@ -1,7 +1,6 @@
 'use client'
-import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface StockData {
   symbol: string
@@ -9,163 +8,96 @@ interface StockData {
   price: number
   change: number
   changePercent: number
+  currency: string
+  high: number
+  low: number
+  volume: number
 }
 
-function BuyContent() {
+export default function Home() {
   const router = useRouter()
-  const params = useSearchParams()
-  const ticker = params.get('ticker') || ''
+  const [ticker, setTicker] = useState('')
   const [stock, setStock] = useState<StockData | null>(null)
-  const [balance, setBalance] = useState(0)
-  const [amount, setAmount] = useState(100)
-  const [loading, setLoading] = useState(true)
-  const [buying, setBuying] = useState(false)
-  const [done, setDone] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [notFound, setNotFound] = useState(false)
 
-  useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/auth'); return }
-      const { data: p } = await supabase.from('portfolios').select('balance').eq('user_id', user.id).single()
-      if (!p) { router.push('/onboarding'); return }
-      setBalance(p.balance)
-      const res = await fetch('/api/stock?ticker=' + ticker)
-      const data = await res.json()
-      if (res.ok && data.price > 0) {
-        setStock(data)
-      } else {
-        setNotFound(true)
-      }
-      setLoading(false)
-    }
-    init()
-  }, [ticker, router])
-
-  const buy = async () => {
-    if (!stock || amount <= 0 || amount > balance) return
-    setBuying(true)
+  const search = async () => {
+    if (!ticker.trim()) return
+    setLoading(true)
     setError('')
+    setStock(null)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: p } = await supabase.from('portfolios').select('*').eq('user_id', user.id).single()
-      const entryPrice = stock.price
-      await supabase.from('transactions').insert({
-        user_id: user.id,
-        asset: stock.name,
-        ticker: stock.symbol,
-        emoji: '📈',
-        amount,
-        entry_price: entryPrice,
-      })
-      await supabase.from('portfolios').update({
-        balance: p.balance - amount,
-        invested: p.invested + amount,
-      }).eq('user_id', user.id)
-      setDone(true)
-    } catch {
-      setError('Something went wrong. Please try again.')
+      const res = await fetch(`/api/stock?ticker=${ticker.trim()}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      if (!data.price || data.price === 0) throw new Error('Stock not found')
+      setStock(data)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Something went wrong')
     } finally {
-      setBuying(false)
+      setLoading(false)
     }
   }
 
-  if (loading) return (
-    <main className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
-      <p className="text-zinc-400">Loading...</p>
-    </main>
-  )
-
-  if (done) return (
-    <main className="min-h-screen bg-zinc-950 text-white flex items-center justify-center px-6">
-      <div className="text-center w-full max-w-sm">
-        <div className="text-7xl mb-6">✅</div>
-        <h1 className="text-3xl font-bold mb-2">Investment made!</h1>
-        <p className="text-zinc-400 mb-8">You invested <span className="text-emerald-400 font-bold">${amount}</span> in {stock?.name}</p>
-        <button onClick={() => router.push('/portfolio')} className="w-full bg-emerald-400 text-zinc-950 font-bold py-4 rounded-2xl mb-3">View portfolio</button>
-        <button onClick={() => router.push('/')} className="w-full border-2 border-zinc-700 text-zinc-400 py-4 rounded-2xl">Search more</button>
-      </div>
-    </main>
-  )
-
-  if (notFound) return (
-    <main className="min-h-screen bg-zinc-950 text-white">
-      <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-        <button onClick={() => router.back()} className="text-zinc-400 text-sm">← Back</button>
-        <span className="text-emerald-400 font-bold">FirsTrade</span>
-        <button onClick={() => router.push('/portfolio')} className="text-zinc-400 text-sm">Portfolio</button>
-      </header>
-      <div className="max-w-sm mx-auto px-6 pt-16 text-center">
-        <div className="text-6xl mb-6">🔍</div>
-        <h1 className="text-2xl font-bold mb-3">Ticker not found</h1>
-        <p className="text-zinc-400 mb-2">We couldn't find a stock for <span className="text-white font-bold">{ticker.toUpperCase()}</span>.</p>
-        <p className="text-zinc-500 text-sm mb-8">Make sure you're using the correct ticker symbol. For example: AAPL for Apple, MSFT for Microsoft.</p>
-        <button onClick={() => router.push('/')} className="w-full bg-emerald-400 text-zinc-950 font-bold py-4 rounded-2xl">
-          Search again
-        </button>
-      </div>
-    </main>
-  )
+  const isPositive = stock && stock.change >= 0
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
-        <button onClick={() => router.back()} className="text-zinc-400 text-sm">← Back</button>
-        <span className="text-emerald-400 font-bold">FirsTrade</span>
-        <button onClick={() => router.push('/portfolio')} className="text-zinc-400 text-sm">Portfolio</button>
+        <span className="text-emerald-400 text-2xl font-bold tracking-tight">Firs<span className="text-white">Trade</span></span>
+        <button onClick={() => { window.location.href = '/auth' }}
+          className="bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold px-4 py-2 rounded-xl text-sm transition">
+          My Portfolio
+        </button>
       </header>
-      <div className="max-w-sm mx-auto px-6 pt-8">
-        {stock && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="text-zinc-400 text-sm">{stock.symbol}</div>
-                <div className="text-xl font-bold">{stock.name}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold">${stock.price?.toFixed(2)}</div>
-                <div className={stock.change >= 0 ? 'text-emerald-400 text-sm' : 'text-red-400 text-sm'}>
-                  {stock.change >= 0 ? '▲' : '▼'} {Math.abs(stock.changePercent).toFixed(2)}%
-                </div>
-              </div>
-            </div>
+      <section className="max-w-2xl mx-auto px-6 pt-24 pb-12 text-center">
+        <h1 className="text-5xl font-bold mb-4 leading-tight">Your first trade,<br /><span className="text-emerald-400">without the risk.</span></h1>
+        <p className="text-zinc-400 text-lg mb-12">Practice investing with $10,000 in virtual money. Learn the market before putting real money on the line.</p>
+        <div className="flex gap-2">
+          <input type="text" value={ticker}
+            onChange={(e) => setTicker(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === 'Enter' && search()}
+            placeholder="Search a stock — try AAPL, TSLA, NVDA"
+            className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400 transition" />
+          <button onClick={search} disabled={loading}
+            className="bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-semibold px-6 py-3 rounded-xl transition disabled:opacity-50">
+            {loading ? '...' : 'Search'}
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+            <p className="text-red-400 text-sm">🔍 We couldn't find a stock for <span className="font-bold">{ticker}</span>. Try a valid ticker like AAPL, TSLA, or NVDA.</p>
           </div>
         )}
 
-        <div className="text-center mb-6">
-          <p className="text-zinc-400 text-sm">Available cash</p>
-          <p className="text-2xl font-bold text-emerald-400">${balance.toLocaleString('en-US')}</p>
-        </div>
-
-        <h2 className="text-lg font-semibold mb-3">How much to invest?</h2>
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {[50, 100, 250, 500].map(amt => (
-            <button key={amt} onClick={() => setAmount(amt)}
-              className={`p-4 rounded-2xl border-2 font-semibold text-lg transition-all ${amount === amt ? 'border-emerald-400 bg-emerald-400/10 text-emerald-400' : 'border-zinc-800 bg-zinc-900 text-white hover:border-emerald-400'}`}>
-              ${amt}
+        {stock && (
+          <div className="mt-8 bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-left">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="text-zinc-400 text-sm">{stock.symbol}</div>
+                <div className="text-xl font-semibold">{stock.name}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-3xl font-bold">{stock.currency === 'USD' ? '$' : ''}{stock.price?.toFixed(2)}</div>
+                <div className={`text-sm font-medium ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {isPositive ? '▲' : '▼'} {Math.abs(stock.change).toFixed(2)} ({Math.abs(stock.changePercent).toFixed(2)}%)
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-zinc-800 mb-4">
+              <div><div className="text-zinc-500 text-xs mb-1">Day High</div><div className="font-medium">${stock.high?.toFixed(2)}</div></div>
+              <div><div className="text-zinc-500 text-xs mb-1">Day Low</div><div className="font-medium">${stock.low?.toFixed(2)}</div></div>
+              <div><div className="text-zinc-500 text-xs mb-1">Volume</div><div className="font-medium">{stock.volume?.toLocaleString()}</div></div>
+            </div>
+            <button
+              onClick={() => router.push(`/buy?ticker=${stock.symbol}`)}
+              className="w-full bg-emerald-400 hover:bg-emerald-300 text-zinc-950 font-bold py-3 rounded-xl transition">
+              Buy {stock.symbol}
             </button>
-          ))}
-        </div>
-
-        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-        {amount > balance && <p className="text-red-400 text-sm mb-4">Amount exceeds your available balance</p>}
-
-        <button onClick={buy} disabled={buying || amount > balance || !stock}
-          className="w-full bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 text-zinc-950 font-bold py-4 rounded-2xl transition mb-3">
-          {buying ? 'Processing...' : `Buy $${amount} of ${stock?.symbol}`}
-        </button>
-        <p className="text-zinc-500 text-xs text-center pb-8">Paper trading only. No real money involved.</p>
-      </div>
+          </div>
+        )}
+      </section>
     </main>
-  )
-}
-
-export default function BuyPage() {
-  return (
-    <Suspense fallback={<main className="min-h-screen bg-zinc-950 text-white flex items-center justify-center"><p className="text-zinc-400">Loading...</p></main>}>
-      <BuyContent />
-    </Suspense>
   )
 }
