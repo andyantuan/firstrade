@@ -22,6 +22,7 @@ function BuyContent() {
   const [buying, setBuying] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -32,7 +33,11 @@ function BuyContent() {
       setBalance(p.balance)
       const res = await fetch('/api/stock?ticker=' + ticker)
       const data = await res.json()
-      if (res.ok) setStock(data)
+      if (res.ok && data.price > 0) {
+        setStock(data)
+      } else {
+        setNotFound(true)
+      }
       setLoading(false)
     }
     init()
@@ -41,11 +46,12 @@ function BuyContent() {
   const buy = async () => {
     if (!stock || amount <= 0 || amount > balance) return
     setBuying(true)
+    setError('')
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data: p } = await supabase.from('portfolios').select('*').eq('user_id', user.id).single()
-      const entryPrice = stock.price || 0
+      const entryPrice = stock.price
       await supabase.from('transactions').insert({
         user_id: user.id,
         asset: stock.name,
@@ -59,8 +65,8 @@ function BuyContent() {
         invested: p.invested + amount,
       }).eq('user_id', user.id)
       setDone(true)
-    } catch(e) {
-      setError('Something went wrong')
+    } catch {
+      setError('Something went wrong. Please try again.')
     } finally {
       setBuying(false)
     }
@@ -77,9 +83,28 @@ function BuyContent() {
       <div className="text-center w-full max-w-sm">
         <div className="text-7xl mb-6">✅</div>
         <h1 className="text-3xl font-bold mb-2">Investment made!</h1>
-        <p className="text-zinc-400 mb-8">You invested <span className="text-emerald-400 font-bold">\${amount}</span> in {stock?.name}</p>
+        <p className="text-zinc-400 mb-8">You invested <span className="text-emerald-400 font-bold">${amount}</span> in {stock?.name}</p>
         <button onClick={() => router.push('/portfolio')} className="w-full bg-emerald-400 text-zinc-950 font-bold py-4 rounded-2xl mb-3">View portfolio</button>
         <button onClick={() => router.push('/')} className="w-full border-2 border-zinc-700 text-zinc-400 py-4 rounded-2xl">Search more</button>
+      </div>
+    </main>
+  )
+
+  if (notFound) return (
+    <main className="min-h-screen bg-zinc-950 text-white">
+      <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
+        <button onClick={() => router.back()} className="text-zinc-400 text-sm">← Back</button>
+        <span className="text-emerald-400 font-bold">FirsTrade</span>
+        <button onClick={() => router.push('/portfolio')} className="text-zinc-400 text-sm">Portfolio</button>
+      </header>
+      <div className="max-w-sm mx-auto px-6 pt-16 text-center">
+        <div className="text-6xl mb-6">🔍</div>
+        <h1 className="text-2xl font-bold mb-3">Ticker not found</h1>
+        <p className="text-zinc-400 mb-2">We couldn't find a stock for <span className="text-white font-bold">{ticker.toUpperCase()}</span>.</p>
+        <p className="text-zinc-500 text-sm mb-8">Make sure you're using the correct ticker symbol. For example: AAPL for Apple, MSFT for Microsoft.</p>
+        <button onClick={() => router.push('/')} className="w-full bg-emerald-400 text-zinc-950 font-bold py-4 rounded-2xl">
+          Search again
+        </button>
       </div>
     </main>
   )
@@ -100,7 +125,7 @@ function BuyContent() {
                 <div className="text-xl font-bold">{stock.name}</div>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold">\${stock.price?.toFixed(2)}</div>
+                <div className="text-2xl font-bold">${stock.price?.toFixed(2)}</div>
                 <div className={stock.change >= 0 ? 'text-emerald-400 text-sm' : 'text-red-400 text-sm'}>
                   {stock.change >= 0 ? '▲' : '▼'} {Math.abs(stock.changePercent).toFixed(2)}%
                 </div>
@@ -108,24 +133,28 @@ function BuyContent() {
             </div>
           </div>
         )}
+
         <div className="text-center mb-6">
           <p className="text-zinc-400 text-sm">Available cash</p>
-          <p className="text-2xl font-bold text-emerald-400">\${balance.toLocaleString('en-US')}</p>
+          <p className="text-2xl font-bold text-emerald-400">${balance.toLocaleString('en-US')}</p>
         </div>
+
         <h2 className="text-lg font-semibold mb-3">How much to invest?</h2>
         <div className="grid grid-cols-2 gap-3 mb-6">
           {[50, 100, 250, 500].map(amt => (
             <button key={amt} onClick={() => setAmount(amt)}
-              className={`p-4 rounded-2xl border-2 font-semibold text-lg transition-all \${amount === amt ? 'border-emerald-400 bg-emerald-400/10 text-emerald-400' : 'border-zinc-800 bg-zinc-900 text-white hover:border-emerald-400'}`}>
-              \${amt}
+              className={`p-4 rounded-2xl border-2 font-semibold text-lg transition-all ${amount === amt ? 'border-emerald-400 bg-emerald-400/10 text-emerald-400' : 'border-zinc-800 bg-zinc-900 text-white hover:border-emerald-400'}`}>
+              ${amt}
             </button>
           ))}
         </div>
+
         {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-        {amount > balance && <p className="text-red-400 text-sm mb-4">Amount exceeds balance</p>}
+        {amount > balance && <p className="text-red-400 text-sm mb-4">Amount exceeds your available balance</p>}
+
         <button onClick={buy} disabled={buying || amount > balance || !stock}
           className="w-full bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 text-zinc-950 font-bold py-4 rounded-2xl transition mb-3">
-          {buying ? 'Processing...' : `Buy \$\${amount} of \${stock?.symbol || '...'}`}
+          {buying ? 'Processing...' : `Buy $${amount} of ${stock?.symbol}`}
         </button>
         <p className="text-zinc-500 text-xs text-center pb-8">Paper trading only. No real money involved.</p>
       </div>
