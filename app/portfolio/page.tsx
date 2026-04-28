@@ -62,7 +62,6 @@ function groupTransactions(transactions: Transaction[], prices: LivePrices): Gro
   }> = {}
 
   for (const tx of transactions) {
-    if (tx.amount <= 0) continue
     if (!map[tx.ticker]) {
       map[tx.ticker] = {
         ticker: tx.ticker, asset: tx.asset, emoji: tx.emoji,
@@ -73,18 +72,22 @@ function groupTransactions(transactions: Transaction[], prices: LivePrices): Gro
     const shares = tx.entry_price > 0 ? tx.amount / tx.entry_price : 0
     map[tx.ticker].totalInvested += tx.amount
     map[tx.ticker].totalShares += shares
-    map[tx.ticker].count += 1
-    map[tx.ticker].entryPriceSum += tx.entry_price
+    if (tx.amount > 0) {
+      map[tx.ticker].count += 1
+      map[tx.ticker].entryPriceSum += tx.entry_price
+    }
   }
 
-  return Object.values(map).map(g => {
-    const currentPrice = prices[g.ticker] || 0
-    const currentValue = g.totalShares * currentPrice
-    const pnl = currentValue - g.totalInvested
-    const pnlPercent = g.totalInvested > 0 ? (pnl / g.totalInvested) * 100 : 0
-    const avgEntryPrice = g.count > 0 ? g.entryPriceSum / g.count : 0
-    return { ...g, avgEntryPrice, currentPrice, currentValue, pnl, pnlPercent }
-  }).sort((a, b) => b.totalInvested - a.totalInvested)
+  return Object.values(map)
+    .filter(g => g.totalShares > 0.0001 && g.totalInvested > 0.01)
+    .map(g => {
+      const currentPrice = prices[g.ticker] || 0
+      const currentValue = g.totalShares * currentPrice
+      const pnl = currentValue - g.totalInvested
+      const pnlPercent = g.totalInvested > 0 ? (pnl / g.totalInvested) * 100 : 0
+      const avgEntryPrice = g.count > 0 ? g.entryPriceSum / g.count : 0
+      return { ...g, avgEntryPrice, currentPrice, currentValue, pnl, pnlPercent }
+    }).sort((a, b) => b.totalInvested - a.totalInvested)
 }
 
 function getInsightSentence(grouped: GroupedAsset[]): string {
@@ -95,7 +98,6 @@ function getInsightSentence(grouped: GroupedAsset[]): string {
   const daysSinceOldest = grouped[0]?.oldestTx
     ? Math.floor((Date.now() - new Date(grouped[0].oldestTx).getTime()) / 86400000)
     : 0
-
   if (bigLoser) return "Markets go up and down. The investors who do best are usually the ones who wait."
   if (allGreen) return "Your portfolio is growing. The best move right now is usually to do nothing."
   if (onlyOne) return "You're off to a great start. Adding a second company would spread your risk."
@@ -191,20 +193,23 @@ export default function PortfolioPage() {
       const { data: p } = await supabase.from('portfolios').select('*').eq('user_id', user.id).single()
       const sharesToSell = asset.totalShares * (amount / asset.totalInvested)
       const saleValue = sellAll ? asset.currentValue : sharesToSell * asset.currentPrice
-      await supabase.from('transactions').insert({
+      const { error: txError } = await supabase.from('transactions').insert({
         user_id: user.id, asset: asset.asset, ticker: asset.ticker,
         emoji: asset.emoji, amount: -amount, entry_price: asset.currentPrice,
         sell_reason: reason,
       })
-      await supabase.from('portfolios').update({
+      if (txError) throw new Error('Transaction failed: ' + txError.message)
+      const { error: portError } = await supabase.from('portfolios').update({
         balance: p.balance + saleValue,
         invested: p.invested - amount,
       }).eq('user_id', user.id)
+      if (portError) throw new Error('Portfolio update failed: ' + portError.message)
       await load()
       setSelling(null)
       setSellAmount(prev => ({ ...prev, [asset.ticker]: 0 }))
     } catch (e) {
-      console.error(e)
+      console.error('SELL ERROR:', e)
+      alert('Sell failed: ' + String(e))
       setSelling(null)
     }
   }
@@ -304,7 +309,6 @@ export default function PortfolioPage() {
                   className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 cursor-pointer active:scale-[0.99] transition-transform"
                   onClick={() => setSelectedAsset(asset)}
                 >
-                  {/* Header */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{asset.emoji}</span>
@@ -321,10 +325,8 @@ export default function PortfolioPage() {
                     </div>
                   </div>
 
-                  {/* Asset insight */}
                   <p className="text-zinc-500 text-xs mb-3 pl-1">{getAssetInsight(asset)}</p>
 
-                  {/* Stats */}
                   <div className="grid grid-cols-3 gap-2 border-t border-zinc-800 pt-3 mb-3 text-xs">
                     <div>
                       <div className="text-zinc-500 mb-1">Invested</div>
@@ -340,7 +342,6 @@ export default function PortfolioPage() {
                     </div>
                   </div>
 
-                  {/* Sell */}
                   <div className="flex gap-2 items-center" onClick={e => e.stopPropagation()}>
                     <input type="number" placeholder="Amount $"
                       value={sellAmount[asset.ticker] || ''}
@@ -389,10 +390,10 @@ export default function PortfolioPage() {
             <p className="text-zinc-400 text-sm mb-5">Why are you selling <span className="text-white font-semibold">{sellReflection.asset.asset}</span>?</p>
             <div className="flex flex-col gap-3">
               {[
-                { reason: 'price_dropped', label: '📉 The price dropped and I\'m worried', nudge: 'Selling when prices drop locks in the loss. Markets usually recover.' },
-                { reason: 'switching', label: '💸 I want to invest in something else', nudge: 'Switching is a valid strategy. Make sure you\'ve thought it through.' },
-                { reason: 'taking_profit', label: '✅ I made a profit and I\'m happy', nudge: 'Taking profits is smart. Well done.' },
-                { reason: 'just_trying', label: '🤷 I\'m just trying it out', nudge: 'That\'s completely fine — this is practice money.' },
+                { reason: 'price_dropped', label: "📉 The price dropped and I'm worried", nudge: "Selling when prices drop locks in the loss. Markets usually recover." },
+                { reason: 'switching', label: "💸 I want to invest in something else", nudge: "Switching is a valid strategy. Make sure you've thought it through." },
+                { reason: 'taking_profit', label: "✅ I made a profit and I'm happy", nudge: "Taking profits is smart. Well done." },
+                { reason: 'just_trying', label: "🤷 I'm just trying it out", nudge: "That's completely fine — this is practice money." },
               ].map(({ reason, label, nudge }) => (
                 <button key={reason}
                   onClick={() => handleSellConfirm(reason)}
